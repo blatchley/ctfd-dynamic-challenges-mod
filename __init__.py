@@ -3,26 +3,9 @@ from __future__ import division  # Use floating point for math calculations
 import types
 import math
 
-from CTFd.models import Solves, db
+from CTFd.models import Solves, Challenges, db
 from CTFd.plugins.challenges import CHALLENGE_CLASSES
 from CTFd.utils.modes import get_model
-
-'''
-const p0 = 0.7
-const p1 = 0.96
-
-const c0 = -Math.atanh(p0)
-const c1 = Math.atanh(p1)
-const a = (x: number): number => (1 - Math.tanh(x)) / 2
-const b = (x: number): number => (a((c1 - c0) * x + c0) - a(c1)) / (a(c0) - a(c1))
-
-export const getScore = (rl: number, rh: number, maxSolves: number, solves: number): number => {
-  const s = Math.max(1, maxSolves)
-  const f = (x: number): number => rl + (rh - rl) * b(x / s)
-  return Math.round(Math.max(f(solves), f(s)))
-}
-'''
-
 
 
 def calculate_value(cls, challenge):
@@ -37,6 +20,7 @@ def calculate_value(cls, challenge):
         )
         .count()
     )
+    teams_count = Model.query.filter_by(hidden=False, banned=False).count()
 
     # If the solve count is 0 we shouldn't manipulate the solve count to
     # let the math update back to normal
@@ -57,7 +41,9 @@ def calculate_value(cls, challenge):
         s = max(1, maxSolves)
         f = lambda x: rl + (rh - rl) * b(x / s)
         return round(max(f(solves), f(s)))
-    value = get_score(challenge.minimum, challenge.initial, challenge.decay, solve_count)
+    # value = get_score(challenge.minimum, challenge.initial, challenge.decay, solve_count)
+    # https://github.com/sigpwny/ctfd-dynamic-challenges-mod/issues/1
+    value = get_score(challenge.minimum, challenge.initial, teams_count, solve_count)
 
     if value < challenge.minimum:
         value = challenge.minimum
@@ -68,6 +54,20 @@ def calculate_value(cls, challenge):
 
 
 def load(app):
+    if "dynamic" not in CHALLENGE_CLASSES:
+        print("DynamicValueChallenge class not found, skipping plugin...")
+        return
+    
+    # Hook the DynamicValueChallenge class and modify the calculate method
     dvc_class = CHALLENGE_CLASSES["dynamic"]
     print("hooking DynamicValueChallenge and modifying calculate method...")
     setattr(dvc_class, calculate_value.__name__, types.MethodType(calculate_value, dvc_class))
+
+    # Recalculate the value of all challenges
+    print("recalculating values for all challenges...")
+    challs = Challenges.query.filter_by(type="dynamic")
+    for challenge in challs:
+        print(f"recalculating value for challenge {challenge.id}... current value: {challenge.value}")
+        challenge = calculate_value(dvc_class, challenge)
+        print(f"new value: {challenge.value}")
+    print("done recalculating values for all challenges")
