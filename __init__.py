@@ -2,10 +2,16 @@ from __future__ import division  # Use floating point for math calculations
 
 import types
 import math
+import os
 
 from CTFd.models import Solves, Challenges, db
 from CTFd.plugins.challenges import CHALLENGE_CLASSES
 from CTFd.utils.modes import get_model
+from CTFd.utils.user import (
+    authed,
+    get_current_team
+)
+from CTFd.utils.scores import get_team_standings
 
 
 def calculate_value(cls, challenge):
@@ -54,6 +60,29 @@ def calculate_value(cls, challenge):
 
 
 def load(app):
+    # Make a page to show the flag if the user has the most points
+    @app.route('/flag')
+    def flag():
+        if not authed():
+            return "You must be logged in to view the flag!"
+
+        if Solves.query.count() <= 0:
+            return "No solves have been submitted yet!"
+        
+        team = get_current_team()
+
+        if team is None:
+            return "You must be on a team to view the flag!"
+        print(f"/flag check for team: {team.id}, {team.name}")
+        
+        team_standings = get_team_standings()
+        print(f"Current team standings: {team_standings}")
+
+        # If the current team is the team with the most points, show the flag
+        if team_standings and team_standings[0].team_id == team.id:
+            return f"Congrats! You beat Kalmarunionen! Here's your flag: {os.environ.get('FLAG', 'kalmar{fake_flag}')}"
+        return "You are not on the team with the most points!"
+    
     if "dynamic" not in CHALLENGE_CLASSES:
         print("DynamicValueChallenge class not found, skipping plugin...")
         return
